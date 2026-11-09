@@ -1,0 +1,6 @@
+# 封包器运行依赖
+PyQt5
+Pillow
+
+# 构建单文件程序
+PyInstaller
