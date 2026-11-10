@@ -19,6 +19,7 @@ import os
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import zlib
 
@@ -49,6 +50,75 @@ def _csc():
 
 def _here():
     return os.path.dirname(os.path.abspath(__file__))
+
+
+def _resource_path(name):
+    root = (sys._MEIPASS if getattr(sys, "frozen", False)
+            else os.path.dirname(_here()))
+    return os.path.join(root, "resources", name)
+
+
+def _extract_exe_icon(exe_path, workdir, log):
+    """Extract an executable's associated icon to an ICO using .NET Framework."""
+    if not exe_path or not os.path.isfile(exe_path):
+        return None
+    csc = _csc()
+    source = os.path.join(workdir, "extract_icon.cs")
+    helper = os.path.join(workdir, "extract_icon.exe")
+    icon = os.path.join(workdir, "selected_app.ico")
+    code = r'''using System;
+using System.Drawing;
+class ExtractIcon {
+    static int Main(string[] args) {
+        try {
+            Icon icon = Icon.ExtractAssociatedIcon(args[0]);
+            if (icon == null) return 2;
+            using (System.IO.FileStream output = System.IO.File.Create(args[1]))
+                icon.Save(output);
+            return 0;
+        } catch { return 3; }
+    }
+}'''
+    try:
+        with open(source, "w", encoding="utf-8-sig") as f:
+            f.write(code)
+        proc = subprocess.Popen(
+            [csc, "/nologo", "/target:exe", "/out:" + helper,
+             "/r:System.dll", "/r:System.Drawing.dll", source],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=workdir,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        output = proc.communicate()[0].decode("gbk", errors="replace")
+        if proc.returncode != 0:
+            log("未能编译图标提取工具：%s" % output.strip())
+            return None
+        proc = subprocess.Popen(
+            [helper, exe_path, icon], stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, cwd=workdir,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        proc.communicate()
+        if proc.returncode == 0 and os.path.isfile(icon) and os.path.getsize(icon) > 0:
+            return icon
+    except (OSError, PackError) as e:
+        log("读取快捷方式目标图标失败：%s" % e)
+    return None
+
+
+def _installer_icon(cfg, workdir, log):
+    selected = cfg.get("exe_icon")
+    if selected:
+        return selected
+    target = sanitize_rel(cfg.get("shortcut_x64") or cfg.get("shortcut_x86"))
+    if target:
+        extracted = _extract_exe_icon(
+            os.path.join(cfg.get("pack_dir") or "", target), workdir, log)
+        if extracted:
+            log("安装包图标使用快捷方式目标程序的图标")
+            return extracted
+    fallback = _resource_path("图标.ico")
+    if os.path.isfile(fallback):
+        log("安装包图标使用封包器默认图标")
+        return fallback
+    return None
 
 
 def _cs_escape(s):
@@ -174,13 +244,15 @@ def build_installer(cfg, log, progress=None):
 
         progress(3, "正在生成安装器…")
         log("正在编译安装器骨架（.NET Framework csc）…")
+        installer_icon = _installer_icon(cfg, workdir, log)
         base = _compile_installer(workdir, "installer.exe", cfg,
-                                  cfg.get("exe_icon"), log)
+                                  installer_icon, log)
         progress(7, "正在生成卸载器…")
         log("正在编译卸载器…")
+        uninstall_icon = (cfg.get("uninstall_icon")
+                          or _resource_path("卸载.ico"))
         unbase = _compile_installer(workdir, "uninst_base.exe", cfg,
-                                    cfg.get("uninstall_icon")
-                                    or cfg.get("exe_icon"), log,
+                                    uninstall_icon, log,
                                     src_name="uninstaller_template.cs",
                                     res=[(assets.get("header"),
                                           "PdUninstall.header")])
@@ -237,8 +309,9 @@ def build_installer(cfg, log, progress=None):
 
         assets_seq = [("welcome", _asset_bytes(assets.get("welcome"))),
                       ("header", _asset_bytes(assets.get("header"))),
-                      ("license", _asset_bytes(assets.get("license"))),
                       ("uninst", _asset_bytes(unbase))]
+        if assets.get("license"):
+            assets_seq.insert(2, ("license", _asset_bytes(assets["license"])))
 
         # ---------------- manifest（两遍：定宽偏移 → 长度不变） ----------------
         write_uninstall = bool(cfg.get("write_uninstall", True))

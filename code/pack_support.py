@@ -131,11 +131,15 @@ def prepare_assets(cfg, workdir, log):
     if cfg.get("license_path"):
         if not os.path.isfile(cfg["license_path"]):
             raise PackError("安装协议文件不存在：%s" % cfg["license_path"])
-        lic_out = os.path.join(workdir, "license.txt")
-        with open(lic_out, "w", encoding="utf-16", newline="") as f:
-            f.write(read_text_any(cfg["license_path"]))
-        assets["license"] = lic_out
-        log("安装协议已转存为 Unicode 文本：%s" % cfg["license_path"])
+        license_text = read_text_any(cfg["license_path"])
+        if license_text.strip():
+            lic_out = os.path.join(workdir, "license.txt")
+            with open(lic_out, "w", encoding="utf-16", newline="") as f:
+                f.write(license_text)
+            assets["license"] = lic_out
+            log("安装协议已转存为 Unicode 文本：%s" % cfg["license_path"])
+        else:
+            log("安装协议内容为空，将跳过协议页面")
 
     if cfg.get("welcome_img"):
         if not os.path.isfile(cfg["welcome_img"]):

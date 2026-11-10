@@ -753,7 +753,11 @@ namespace PdInstall
                 btnBack.Location = ScaledPoint(210, 298);
                 btnBack.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
                 btnBack.Enabled = false;
-                btnBack.Click += delegate { ShowPage(page - 1); };
+                btnBack.Click += delegate
+                {
+                    if (page == 2 && Payload.Asset("license") == null) ShowPage(0);
+                    else ShowPage(page - 1);
+                };
                 Controls.Add(btnBack);
 
                 btnNext = new Button();
@@ -1518,7 +1522,11 @@ namespace PdInstall
 
             void OnNext()
             {
-                if (page == 0) { ShowPage(1); return; }
+                if (page == 0)
+                {
+                    ShowPage(Payload.Asset("license") == null ? 2 : 1);
+                    return;
+                }
                 if (page == 1) { ShowPage(2); return; }
                 if (page == 2)
                 {

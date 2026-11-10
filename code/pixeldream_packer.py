@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pdengine import MODES, MODE_GUI, PackError, install_dir_of
 from pdengine import build_installer as _engine_build
 
-APP_TITLE = "像素封包工具 v2.4"
+APP_TITLE = "像素封包工具 v2.5"
 
 
 # ---------------------------------------------------------------- 资源定位
